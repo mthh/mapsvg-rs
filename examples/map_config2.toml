@@ -1,0 +1,11 @@
+[map]
+width = 500
+height = 500
+extent = [-40.0, 60.0, -30.0, 40.0]
+layers = ["afr.geojson"]
+output = "map.svg"
+
+[afr]
+fill = "green"
+fill-opacity = "0.3"
+stroke-width = "0.4"
