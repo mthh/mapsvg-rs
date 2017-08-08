@@ -1,0 +1,10 @@
+[package]
+name = "mapsvg"
+version = "0.1.0"
+authors = ["mthh <>"]
+
+[dependencies]
+svg = "^0.5"
+geojson = "^0.8"
+clap = "^2.26"
+toml = "^0.4"

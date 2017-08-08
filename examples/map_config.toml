@@ -1,0 +1,30 @@
+[map]
+width = 500
+height = 800
+# projection = "+init=epsg:3857"
+extent = [-8191782.6791878305, -5973576.6304815235, -7371967.8868029471, -2485963.7082710671]
+# extent = [-20037508.342789244, 20037508.342789244, -20037508.342789244, 20037508.342789244]
+layers = ["Argentine.geojson", "lines.geojson", "points.geojson"]
+output = "map.svg"
+
+[Argentine]
+fill = "red"
+fill-opacity = "0.1"
+stroke = "black"
+stroke-width = "1.2"
+stroke-opacity = "0.5"
+
+[lines]
+stroke = "green"
+stroke-width = "2.6"
+
+# Look! It use default values if I don't define any !
+# [points]
+# radius = "12"
+# fill = "rgb(238, 79, 21)"
+
+# OMG! I can set a title!
+[title]
+content = "OMG! Title!"
+font-size = "38"
+position = [400, 50]
