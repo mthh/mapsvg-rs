@@ -7,13 +7,15 @@ For those who love TOML files and SVG ?!
 
 ### Example of TOML configuration file and output:
 **config.toml**
-```
+```toml
 [map]
 width = 500
 height = 800
+projection = "+init=epsg:3857" # This is the projection to use to draw the map
 extent = [-8191782.6791878305, -5973576.6304815235, -7371967.8868029471, -2485963.7082710671]
 layers = ["Argentine.geojson", "lines.geojson", "points.geojson"]
 output = "map.svg"
+background = "rgba(45, 45, 244, 0.5)"
 
 [Argentine]
 fill = "red"

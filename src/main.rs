@@ -2,15 +2,18 @@ extern crate svg;
 extern crate geojson;
 extern crate clap;
 extern crate toml;
+extern crate proj;
+extern crate colorbrewer;
 
 use std::collections::BTreeMap;
 use clap::{Arg, App};
 use geojson::{GeoJson, Value};
+use proj::Proj;
 use std::fs::File;
 use std::io::Read;
 use svg::Document;
 use svg::Node;
-use svg::node::element::{Circle, Group, Path, Text};
+use svg::node::element::{Circle, Group, Path, Rectangle as Rect, Text};
 use svg::node::Text as NodeText;
 use svg::node::element::path::Data;
 
@@ -60,6 +63,149 @@ struct LayerProperties {
     radius: String,
 }
 
+fn get_values(geojson: &GeoJson, field_name: &String) -> Vec<f64> {
+    let features = match geojson {
+        &GeoJson::FeatureCollection(ref collection) => &collection.features,
+        _ => panic!("Error: expected a Feature collection of polygons!"),
+    };
+
+    let mut res = Vec::new();
+    for feature in features {
+        if let Some(ref prop) = feature.properties {
+            res.push(prop[field_name].as_f64().unwrap());
+        } else {
+            panic!("Unable to find field {}!", field_name);
+        }
+    }
+    res
+}
+
+fn reproj(decoded_geojson: &mut GeoJson, input_proj: &Proj, output_proj: &Proj) -> GeoJson {
+    let features = match decoded_geojson {
+        &mut GeoJson::FeatureCollection(ref mut collection) => &collection.features,
+        _ => panic!("Error: expected a Feature collection of polygons!"),
+    };
+    let mut res = Vec::new();
+    for feature in features {
+        let geom = feature.to_owned().geometry.unwrap();
+        match geom.value {
+            Value::Point(ref point) => {
+                let p = input_proj
+                    .project(&output_proj, (point[0].to_radians(), point[1].to_radians()));
+                res.push(geojson::Feature {
+                             geometry: Some(geojson::Geometry::new(Value::Point(vec![p.0, p.1]))),
+                             properties: feature.properties.to_owned(),
+                             bbox: None,
+                             id: feature.id.to_owned(),
+                             foreign_members: None,
+                         });
+            }
+            Value::MultiPoint(points) => {
+                let mut pts = Vec::new();
+                for point in points {
+                    let p =
+                        input_proj
+                            .project(&output_proj, (point[0].to_radians(), point[1].to_radians()));
+                    pts.push(vec![p.0, p.1]);
+                }
+                res.push(geojson::Feature {
+                             geometry: Some(geojson::Geometry::new(Value::MultiPoint(pts))),
+                             properties: feature.properties.to_owned(),
+                             bbox: None,
+                             id: feature.id.to_owned(),
+                             foreign_members: None,
+                         });
+            }
+            Value::LineString(positions) => {
+                let mut pos = Vec::new();
+                for point in positions {
+                    let p =
+                        input_proj
+                            .project(&output_proj, (point[0].to_radians(), point[1].to_radians()));
+                    pos.push(vec![p.0, p.1]);
+                }
+                res.push(geojson::Feature {
+                             geometry: Some(geojson::Geometry::new(Value::LineString(pos))),
+                             properties: feature.properties.to_owned(),
+                             bbox: None,
+                             id: feature.id.to_owned(),
+                             foreign_members: None,
+                         });
+            }
+            Value::MultiLineString(lines) => {
+                let mut pos = Vec::new();
+                for line in lines {
+                    let mut v = Vec::new();
+                    for point in line {
+                        let p =
+                            input_proj.project(&output_proj,
+                                               (point[0].to_radians(), point[1].to_radians()));
+                        v.push(vec![p.0, p.1]);
+                    }
+                    pos.push(v);
+                }
+                res.push(geojson::Feature {
+                             geometry: Some(geojson::Geometry::new(Value::MultiLineString(pos))),
+                             properties: feature.properties.to_owned(),
+                             bbox: None,
+                             id: feature.id.to_owned(),
+                             foreign_members: None,
+                         });
+            }
+            Value::Polygon(poly) => {
+                let mut pos = Vec::new();
+                for ring in poly {
+                    let mut v = Vec::new();
+                    for point in ring {
+                        let p =
+                            input_proj.project(&output_proj,
+                                               (point[0].to_radians(), point[1].to_radians()));
+                        v.push(vec![p.0, p.1]);
+                    }
+                    pos.push(v);
+                }
+                res.push(geojson::Feature {
+                             geometry: Some(geojson::Geometry::new(Value::Polygon(pos))),
+                             properties: feature.properties.to_owned(),
+                             bbox: None,
+                             id: feature.id.to_owned(),
+                             foreign_members: None,
+                         });
+            }
+            Value::MultiPolygon(positions) => {
+                let mut pos = Vec::new();
+                for poly in positions {
+                    let mut v = Vec::new();
+                    for ring in poly {
+                        let mut _v = Vec::new();
+                        for point in ring {
+                            let p = input_proj.project(&output_proj,
+                                                       (point[0].to_radians(),
+                                                        point[1].to_radians()));
+                            _v.push(vec![p.0, p.1]);
+                        }
+                        v.push(_v)
+                    }
+                    pos.push(v);
+                }
+                res.push(geojson::Feature {
+                             geometry: Some(geojson::Geometry::new(Value::MultiPolygon(pos))),
+                             properties: feature.properties.to_owned(),
+                             bbox: None,
+                             id: feature.id.to_owned(),
+                             foreign_members: None,
+                         });
+            }
+            _ => panic!("I don't know what to do!"),
+        }
+    }
+    geojson::GeoJson::from(geojson::FeatureCollection {
+                               bbox: None,
+                               foreign_members: None,
+                               features: res,
+                           })
+}
+
 impl LayerProperties {
     fn from_config(c: &BTreeMap<String, toml::value::Value>) -> Self {
         LayerProperties {
@@ -99,7 +245,7 @@ impl<'a> Converter<'a> {
     pub fn convert(&self, decoded_geojson: GeoJson, prop: &LayerProperties) -> Group {
         let features = match decoded_geojson {
             GeoJson::FeatureCollection(collection) => collection.features,
-            _ => panic!("Error: expected a Feature collection of polygons!"),
+            _ => panic!("Error: expected a Feature collection!"),
         };
 
         let mut group = Group::new();
@@ -109,7 +255,7 @@ impl<'a> Converter<'a> {
                 Value::Point(point) => group.append(self.draw_point(&point, prop)),
                 Value::MultiPoint(points) => {
                     for point in &points {
-                        group.append(self.draw_point(point, prop));
+                        group.append(self.draw_point(&point, prop));
                     }
                 }
                 Value::LineString(positions) => {
@@ -157,7 +303,7 @@ impl<'a> Converter<'a> {
                                      .set("stroke-opacity", prop.stroke_opacity.clone())
                                      .set("d", data));
                 }
-                _ => panic!("Expected a Polygon!"),
+                _ => panic!("I don't handle GeometryCollection yet!!"),
             }
         }
         group
@@ -230,11 +376,28 @@ fn main() {
         .set("y", "0")
         .set("width", format!("{}", converter.viewport_width))
         .set("height", format!("{}", converter.viewport_height));
-    let layers = config_options["map"]["layers"].as_array().unwrap();
+    let config_options_table = config_options.as_table().unwrap();
+    let layers = config_options_table["map"]["layers"].as_array().unwrap();
+    if let Some(&toml::Value::String(ref bg_color)) =
+        config_options_table["map"].get("background") {
+        let bg_rect = Rect::new()
+            .set("fill", bg_color.as_str())
+            .set("width", "100%")
+            .set("height", "100%");
+        document = document.add(bg_rect);
+    };
+
     for input_layer in layers {
         let path = input_layer.as_str().unwrap();
         let name = path.split(".geojson").collect::<Vec<&str>>()[0];
-        let layer_properties = if (&config_options.as_table().unwrap()).contains_key(name) {
+        let layer_properties = if config_options_table.contains_key(name) {
+            // match config_options_table[name].get("representation") {
+            //     Some(&toml::Value::String(ref name)) => {
+            //         LayerProperties::from_config(&config_options[name].as_table().unwrap())
+            //     }
+            //     Some(&_) => panic!(""),
+            //     None => LayerProperties::from_config(&config_options[name].as_table().unwrap()),
+            // }
             LayerProperties::from_config(&config_options[name].as_table().unwrap())
         } else {
             LayerProperties::default()
@@ -242,11 +405,17 @@ fn main() {
         let mut file = File::open(path).unwrap();
         let mut raw_json = String::new();
         file.read_to_string(&mut raw_json).unwrap();
-        let decoded_geojson = raw_json.parse::<GeoJson>().unwrap();
+        let mut decoded_geojson = raw_json.parse::<GeoJson>().unwrap();
+        if let Some(&toml::Value::String(ref proj_name)) =
+            config_options_table.get("map").unwrap().get("projection") {
+            let input_proj = Proj::new("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs").unwrap();
+            let output_proj = Proj::new(proj_name).unwrap();
+            decoded_geojson = reproj(&mut decoded_geojson, &input_proj, &output_proj);
+        };
         let group = converter.convert(decoded_geojson, &layer_properties);
         document = document.add(group);
     }
-    if let toml::Value::Table(ref title_options) = config_options["title"] {
+    if let Some(&toml::Value::Table(ref title_options)) = config_options_table.get("title") {
         let text = Text::new()
             .set("font-size", title_options["font-size"].as_str().unwrap())
             .set("text-anchor", "middle")

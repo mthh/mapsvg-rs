@@ -10,3 +10,7 @@ output = "map.svg"
 fill = "green"
 fill-opacity = "0.3"
 stroke-width = "0.4"
+representation = "choropleth"
+
+[afr.choropleth]
+field = "POP2005"

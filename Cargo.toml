@@ -8,3 +8,6 @@ svg = "^0.5"
 geojson = "^0.8"
 clap = "^2.26"
 toml = "^0.4"
+proj = { git = "https://github.com/mthh/rust-proj", branch = "withoutgeo" }
+colorbrewer = { git = "https://github.com/mthh/colorbrewer-rs" }
+# geo ="0.4.2"
