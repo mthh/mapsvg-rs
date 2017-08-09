@@ -1,8 +1,9 @@
 [map]
 width = 500
 height = 500
-extent = [-40.0, 60.0, -30.0, 40.0]
+projection = "+init=epsg:3857"
 layers = ["afr.geojson"]
+extent = [-20037508.342789244, 20037508.342789244, -20037508.342789244, 20037508.342789244]
 output = "map.svg"
 
 [afr]
