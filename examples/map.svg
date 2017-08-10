@@ -31,13 +31,13 @@
 <path d="M170.72969,443.57825 L170.72969,443.57825 L263.35745,124.93871 L179.99246,82.32994 L179.99246,265.73294" fill="none" stroke="green" stroke-opacity="1" stroke-width="2.6"/>
 </g>
 <g id="points">
-<circle cx="137.3836873349085" cy="132.3489373684088" fill="blue" radius="4"/>
-<circle cx="187.4026853614099" cy="147.16938122811283" fill="blue" radius="4"/>
-<circle cx="187.4026853614099" cy="212.00882311431792" fill="blue" radius="4"/>
-<circle cx="235.56912790544752" cy="310.19426368485745" fill="blue" radius="4"/>
-<circle cx="163.3194640893905" cy="332.42492947441383" fill="blue" radius="4"/>
-<circle cx="126.26835444013054" cy="391.7067049132299" fill="blue" radius="4"/>
-<circle cx="92.92235575579633" cy="488.0395900013063" fill="blue" radius="4"/>
+<circle cx="137.3836873349085" cy="132.3489373684088" fill="blue" r="4"/>
+<circle cx="187.4026853614099" cy="147.16938122811283" fill="blue" r="4"/>
+<circle cx="187.4026853614099" cy="212.00882311431792" fill="blue" r="4"/>
+<circle cx="235.56912790544752" cy="310.19426368485745" fill="blue" r="4"/>
+<circle cx="163.3194640893905" cy="332.42492947441383" fill="blue" r="4"/>
+<circle cx="126.26835444013054" cy="391.7067049132299" fill="blue" r="4"/>
+<circle cx="92.92235575579633" cy="488.0395900013063" fill="blue" r="4"/>
 </g>
 <text font-size="20" id="source" text-anchor="end" x="480" y="768">
 Source: xyz
