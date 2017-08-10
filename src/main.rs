@@ -17,28 +17,15 @@ use svg::node::element::{Circle, Group, Path, Rectangle as Rect, Text};
 use svg::node::Text as NodeText;
 use svg::node::element::path::Data;
 
+#[macro_use]
+mod macros;
+mod layer;
+mod jenks;
+mod classification;
 
-macro_rules! expect_float {
-    ($value:expr, $name:expr) => (
-        match $value.as_float() {
-            Some(v) => v,
-            None => panic!("Expected float value on property \"{}\"!", $name)
-        }
-    )
-}
+use classification::Classif;
+use layer::{reproj, get_nb_class, get_values};
 
-macro_rules! string_or_default {
-    ($value:expr, $default:expr) => (
-        if $value.is_none() {
-            $default.to_string()
-        } else {
-            match $value.unwrap().as_str() {
-                Some(v) => v.to_string(),
-                None => $default.to_string()
-            }
-        }
-    )
-}
 
 struct MapExtent {
     left: f64,
@@ -47,14 +34,32 @@ struct MapExtent {
     top: f64,
 }
 
-struct Converter<'a> {
-    viewport_width: u32,
-    viewport_height: u32,
-    map_extent: &'a MapExtent,
-    resolution: f64,
+struct ChoroplethLayerProperties {
+    field_name: String,
+    palette_name: String,
+    fill_opacity: String,
+    stroke: String,
+    stroke_opacity: String,
+    stroke_width: String,
+    radius: String,
 }
 
-struct LayerProperties {
+impl ChoroplethLayerProperties {
+    fn from_config(c: &BTreeMap<String, toml::value::Value>) -> Self {
+        ChoroplethLayerProperties {
+            field_name: string_or_default!(c.get("field"), "aaa"),
+            palette_name: string_or_default!(c.get("palette"), "Greens"),
+            fill_opacity: string_or_default!(c.get("fill-opacity"), "0.8"),
+            stroke: string_or_default!(c.get("stroke"), "black"),
+            stroke_opacity: string_or_default!(c.get("stroke-opacity"), "1"),
+            stroke_width: string_or_default!(c.get("stroke-width"), "0.7"),
+            radius: string_or_default!(c.get("radius"), "4"),
+        }
+    }
+}
+
+
+struct SingleColorLayerProperties {
     fill: String,
     fill_opacity: String,
     stroke: String,
@@ -63,156 +68,9 @@ struct LayerProperties {
     radius: String,
 }
 
-fn get_nb_class(nb_features: f64) -> i32 {
-    (1.0 + 3.3 * nb_features.log(10.0)).floor() as i32
-}
-
-fn get_values(geojson: &GeoJson, field_name: &String) -> Vec<f64> {
-    let features = match geojson {
-        &GeoJson::FeatureCollection(ref collection) => &collection.features,
-        _ => panic!("Error: expected a Feature collection of polygons!"),
-    };
-
-    let mut res = Vec::new();
-    for feature in features {
-        if let Some(ref prop) = feature.properties {
-            res.push(prop[field_name].as_f64().unwrap());
-        } else {
-            panic!("Unable to find field {}!", field_name);
-        }
-    }
-    res
-}
-
-fn reproj(decoded_geojson: &mut GeoJson, input_proj: &Proj, output_proj: &Proj) -> GeoJson {
-    let features = match decoded_geojson {
-        &mut GeoJson::FeatureCollection(ref mut collection) => &collection.features,
-        _ => panic!("Error: expected a Feature collection of polygons!"),
-    };
-    let mut res = Vec::new();
-    for feature in features {
-        let geom = feature.to_owned().geometry.unwrap();
-        match geom.value {
-            Value::Point(ref point) => {
-                let p = input_proj
-                    .project(&output_proj, (point[0].to_radians(), point[1].to_radians()));
-                res.push(geojson::Feature {
-                             geometry: Some(geojson::Geometry::new(Value::Point(vec![p.0, p.1]))),
-                             properties: feature.properties.to_owned(),
-                             bbox: None,
-                             id: feature.id.to_owned(),
-                             foreign_members: None,
-                         });
-            }
-            Value::MultiPoint(points) => {
-                let mut pts = Vec::new();
-                for point in points {
-                    let p =
-                        input_proj
-                            .project(&output_proj, (point[0].to_radians(), point[1].to_radians()));
-                    pts.push(vec![p.0, p.1]);
-                }
-                res.push(geojson::Feature {
-                             geometry: Some(geojson::Geometry::new(Value::MultiPoint(pts))),
-                             properties: feature.properties.to_owned(),
-                             bbox: None,
-                             id: feature.id.to_owned(),
-                             foreign_members: None,
-                         });
-            }
-            Value::LineString(positions) => {
-                let mut pos = Vec::new();
-                for point in positions {
-                    let p =
-                        input_proj
-                            .project(&output_proj, (point[0].to_radians(), point[1].to_radians()));
-                    pos.push(vec![p.0, p.1]);
-                }
-                res.push(geojson::Feature {
-                             geometry: Some(geojson::Geometry::new(Value::LineString(pos))),
-                             properties: feature.properties.to_owned(),
-                             bbox: None,
-                             id: feature.id.to_owned(),
-                             foreign_members: None,
-                         });
-            }
-            Value::MultiLineString(lines) => {
-                let mut pos = Vec::new();
-                for line in lines {
-                    let mut v = Vec::new();
-                    for point in line {
-                        let p =
-                            input_proj.project(&output_proj,
-                                               (point[0].to_radians(), point[1].to_radians()));
-                        v.push(vec![p.0, p.1]);
-                    }
-                    pos.push(v);
-                }
-                res.push(geojson::Feature {
-                             geometry: Some(geojson::Geometry::new(Value::MultiLineString(pos))),
-                             properties: feature.properties.to_owned(),
-                             bbox: None,
-                             id: feature.id.to_owned(),
-                             foreign_members: None,
-                         });
-            }
-            Value::Polygon(poly) => {
-                let mut pos = Vec::new();
-                for ring in poly {
-                    let mut v = Vec::new();
-                    for point in ring {
-                        let p =
-                            input_proj.project(&output_proj,
-                                               (point[0].to_radians(), point[1].to_radians()));
-                        v.push(vec![p.0, p.1]);
-                    }
-                    pos.push(v);
-                }
-                res.push(geojson::Feature {
-                             geometry: Some(geojson::Geometry::new(Value::Polygon(pos))),
-                             properties: feature.properties.to_owned(),
-                             bbox: None,
-                             id: feature.id.to_owned(),
-                             foreign_members: None,
-                         });
-            }
-            Value::MultiPolygon(positions) => {
-                let mut pos = Vec::new();
-                for poly in positions {
-                    let mut v = Vec::new();
-                    for ring in poly {
-                        let mut _v = Vec::new();
-                        for point in ring {
-                            let p = input_proj.project(&output_proj,
-                                                       (point[0].to_radians(),
-                                                        point[1].to_radians()));
-                            _v.push(vec![p.0, p.1]);
-                        }
-                        v.push(_v)
-                    }
-                    pos.push(v);
-                }
-                res.push(geojson::Feature {
-                             geometry: Some(geojson::Geometry::new(Value::MultiPolygon(pos))),
-                             properties: feature.properties.to_owned(),
-                             bbox: None,
-                             id: feature.id.to_owned(),
-                             foreign_members: None,
-                         });
-            }
-            _ => panic!("I don't know what to do!"),
-        }
-    }
-    geojson::GeoJson::from(geojson::FeatureCollection {
-                               bbox: None,
-                               foreign_members: None,
-                               features: res,
-                           })
-}
-
-impl LayerProperties {
+impl SingleColorLayerProperties {
     fn from_config(c: &BTreeMap<String, toml::value::Value>) -> Self {
-        LayerProperties {
+        SingleColorLayerProperties {
             fill: string_or_default!(c.get("fill"), "blue"),
             fill_opacity: string_or_default!(c.get("fill-opacity"), "0.8"),
             stroke: string_or_default!(c.get("stroke"), "black"),
@@ -222,7 +80,7 @@ impl LayerProperties {
         }
     }
     fn default() -> Self {
-        LayerProperties {
+        SingleColorLayerProperties {
             fill: String::from("blue"),
             fill_opacity: String::from("0.8"),
             stroke: String::from("black"),
@@ -231,6 +89,13 @@ impl LayerProperties {
             radius: String::from("4"),
         }
     }
+}
+
+struct Converter<'a> {
+    viewport_width: u32,
+    viewport_height: u32,
+    map_extent: &'a MapExtent,
+    resolution: f64,
 }
 
 impl<'a> Converter<'a> {
@@ -246,82 +111,15 @@ impl<'a> Converter<'a> {
         }
     }
 
-    pub fn convert(&self, decoded_geojson: GeoJson, prop: &LayerProperties) -> Group {
-        let features = match decoded_geojson {
-            GeoJson::FeatureCollection(collection) => collection.features,
-            _ => panic!("Error: expected a Feature collection!"),
-        };
-
-        let mut group = Group::new();
-        for feature in features {
-            let geom = feature.geometry.unwrap();
-            match geom.value {
-                Value::Point(point) => group.append(self.draw_point(&point, prop)),
-                Value::MultiPoint(points) => {
-                    for point in &points {
-                        group.append(self.draw_point(&point, prop));
-                    }
-                }
-                Value::LineString(positions) => {
-                    let data = Data::new();
-                    group.append(Path::new()
-                                     .set("fill", "none")
-                                     .set("stroke", prop.stroke.clone())
-                                     .set("stroke-width", prop.stroke_width.clone())
-                                     .set("stroke-opacity", prop.stroke_opacity.clone())
-                                     .set("d",
-                                          self.draw_path_polygon(&[positions], Some(data))));
-                }
-                Value::MultiLineString(lines) => {
-                    let mut data = Data::new();
-                    for positions in &lines {
-                        data = self.draw_path_polygon(&[positions.to_vec()], Some(data));
-                    }
-                    group.append(Path::new()
-                                     .set("fill", "none")
-                                     .set("stroke", prop.stroke.clone())
-                                     .set("stroke-width", prop.stroke_width.clone())
-                                     .set("stroke-opacity", prop.stroke_opacity.clone())
-                                     .set("d", data));
-                }
-                Value::Polygon(positions) => {
-                    group.append(Path::new()
-                                     .set("fill", prop.fill.clone())
-                                     .set("fill-opacity", prop.fill_opacity.clone())
-                                     .set("stroke", prop.stroke.clone())
-                                     .set("stroke-width", prop.stroke_width.clone())
-                                     .set("stroke-opacity", prop.stroke_opacity.clone())
-                                     .set("d", self.draw_path_polygon(&positions, None)));
-                }
-                Value::MultiPolygon(polys) => {
-                    let mut data = Data::new();
-                    for positions in &polys {
-                        data = self.draw_path_polygon(positions, Some(data));
-                    }
-                    data = data.close();
-                    group.append(Path::new()
-                                     .set("fill", prop.fill.clone())
-                                     .set("fill-opacity", prop.fill_opacity.clone())
-                                     .set("stroke", prop.stroke.clone())
-                                     .set("stroke-width", prop.stroke_width.clone())
-                                     .set("stroke-opacity", prop.stroke_opacity.clone())
-                                     .set("d", data));
-                }
-                _ => panic!("I don't handle GeometryCollection yet!!"),
-            }
-        }
-        group
-    }
-
-    fn draw_point(&self, point: &[f64], prop: &LayerProperties) -> Circle {
+    pub fn draw_point(&self, point: &[f64]) -> Circle {
         Circle::new()
             .set("cx", (point[0] - self.map_extent.left) / self.resolution)
             .set("cy", (self.map_extent.top - point[1]) / self.resolution)
-            .set("r", prop.radius.clone())
-            .set("fill", prop.fill.clone())
+        // .set("r", radius.clone())
+        // .set("fill", fill.clone())
     }
 
-    fn draw_path_polygon(&self, positions: &[Vec<Vec<f64>>], d: Option<Data>) -> Data {
+    pub fn draw_path_polygon(&self, positions: &[Vec<Vec<f64>>], d: Option<Data>) -> Data {
         let (mut data, close) = if d.is_some() {
             (d.unwrap(), false)
         } else {
@@ -338,6 +136,174 @@ impl<'a> Converter<'a> {
             }
         }
         if close { data.close() } else { data }
+    }
+}
+
+enum Representation {
+    Unicolor,
+    Random,
+    Choropleth,
+}
+
+struct Renderer {}
+
+impl Renderer {
+    fn render_unicolor(converter: &Converter,
+                       decoded_geojson: GeoJson,
+                       prop: &SingleColorLayerProperties)
+                       -> Group {
+        let features = match decoded_geojson {
+            GeoJson::FeatureCollection(collection) => collection.features,
+            _ => panic!("Error: expected a Feature collection!"),
+        };
+
+        let mut group = Group::new();
+        for feature in features {
+            let geom = feature.geometry.unwrap();
+            match geom.value {
+                Value::Point(point) => {
+                    let circle = converter.draw_point(&point);
+                    group.append(circle
+                                     .set("fill", prop.fill.clone())
+                                     .set("radius", prop.radius.clone()))
+                }
+                Value::MultiPoint(points) => {
+                    for point in &points {
+                        let circle = converter.draw_point(&point);
+                        group.append(circle
+                                         .set("fill", prop.fill.clone())
+                                         .set("radius", prop.radius.clone()))
+                    }
+                }
+                Value::LineString(positions) => {
+                    let data = Data::new();
+                    group.append(Path::new()
+                                     .set("fill", "none")
+                                     .set("stroke", prop.stroke.clone())
+                                     .set("stroke-width", prop.stroke_width.clone())
+                                     .set("stroke-opacity", prop.stroke_opacity.clone())
+                                     .set("d",
+                                          converter.draw_path_polygon(&[positions],
+                                                                      Some(data))));
+                }
+                Value::MultiLineString(lines) => {
+                    let mut data = Data::new();
+                    for positions in &lines {
+                        data = converter.draw_path_polygon(&[positions.to_vec()], Some(data));
+                    }
+                    group.append(Path::new()
+                                     .set("fill", "none")
+                                     .set("stroke", prop.stroke.clone())
+                                     .set("stroke-width", prop.stroke_width.clone())
+                                     .set("stroke-opacity", prop.stroke_opacity.clone())
+                                     .set("d", data));
+                }
+                Value::Polygon(positions) => {
+                    group.append(Path::new()
+                                     .set("fill", prop.fill.clone())
+                                     .set("fill-opacity", prop.fill_opacity.clone())
+                                     .set("stroke", prop.stroke.clone())
+                                     .set("stroke-width", prop.stroke_width.clone())
+                                     .set("stroke-opacity", prop.stroke_opacity.clone())
+                                     .set("d", converter.draw_path_polygon(&positions, None)));
+                }
+                Value::MultiPolygon(polys) => {
+                    let mut data = Data::new();
+                    for positions in &polys {
+                        data = converter.draw_path_polygon(positions, Some(data));
+                    }
+                    data = data.close();
+                    group.append(Path::new()
+                                     .set("fill", prop.fill.clone())
+                                     .set("fill-opacity", prop.fill_opacity.clone())
+                                     .set("stroke", prop.stroke.clone())
+                                     .set("stroke-width", prop.stroke_width.clone())
+                                     .set("stroke-opacity", prop.stroke_opacity.clone())
+                                     .set("d", data));
+                }
+                _ => panic!("I don't handle GeometryCollection yet!!"),
+            }
+        }
+        group
+    }
+    fn render_choropleth(converter: &Converter,
+                         decoded_geojson: GeoJson,
+                         prop: &ChoroplethLayerProperties)
+                         -> Group {
+        let values = get_values(&decoded_geojson, &prop.field_name);
+        let features = match decoded_geojson {
+            GeoJson::FeatureCollection(collection) => collection.features,
+            _ => panic!("Error: expected a Feature collection!"),
+        };
+        let nb_class = get_nb_class(values.len() as u32) as u32;
+        let classifier = Classif::new(nb_class, values);
+        let palette = colorbrewer::get_ramp(colorbrewer::Palette::Oranges, nb_class).unwrap();
+        let mut group = Group::new();
+        for (ix, feature) in features.iter().enumerate() {
+            let geom = feature.clone().geometry.unwrap();
+            let value = classifier.values[ix];
+            let color = palette[classifier.get_class_index(value).unwrap() as usize];
+            match geom.value {
+                Value::Point(point) => {
+                    let circle = converter.draw_point(&point);
+                    group.append(circle.set("fill", color).set("radius", prop.radius.clone()))
+                }
+                Value::MultiPoint(points) => {
+                    for point in &points {
+                        let circle = converter.draw_point(&point);
+                        group.append(circle.set("fill", color).set("radius", prop.radius.clone()))
+                    }
+                }
+                Value::LineString(positions) => {
+                    let data = Data::new();
+                    group.append(Path::new()
+                                     .set("fill", "none")
+                                     .set("stroke", color)
+                                     .set("stroke-width", prop.stroke_width.clone())
+                                     .set("stroke-opacity", prop.stroke_opacity.clone())
+                                     .set("d",
+                                          converter.draw_path_polygon(&[positions],
+                                                                      Some(data))));
+                }
+                Value::MultiLineString(lines) => {
+                    let mut data = Data::new();
+                    for positions in &lines {
+                        data = converter.draw_path_polygon(&[positions.to_vec()], Some(data));
+                    }
+                    group.append(Path::new()
+                                     .set("fill", "none")
+                                     .set("stroke", color)
+                                     .set("stroke-width", prop.stroke_width.clone())
+                                     .set("stroke-opacity", prop.stroke_opacity.clone())
+                                     .set("d", data));
+                }
+                Value::Polygon(positions) => {
+                    group.append(Path::new()
+                                     .set("fill", color)
+                                     .set("fill-opacity", prop.fill_opacity.clone())
+                                     .set("stroke", prop.stroke.clone())
+                                     .set("stroke-width", prop.stroke_width.clone())
+                                     .set("stroke-opacity", prop.stroke_opacity.clone())
+                                     .set("d", converter.draw_path_polygon(&positions, None)));
+                }
+                Value::MultiPolygon(polys) => {
+                    let mut data = Data::new();
+                    for positions in &polys {
+                        data = converter.draw_path_polygon(positions, Some(data));
+                    }
+                    data = data.close();
+                    group.append(Path::new()
+                                     .set("fill", color)
+                                     .set("fill-opacity", prop.fill_opacity.clone())
+                                     .set("stroke", prop.stroke.clone())
+                                     .set("stroke-width", prop.stroke_width.clone())
+                                     .set("stroke-opacity", prop.stroke_opacity.clone())
+                                     .set("d", data));
+                }
+                _ => panic!("I don't handle GeometryCollection yet!!"),
+            }
+        }
+        group
     }
 }
 
@@ -403,18 +369,6 @@ fn main() {
     for input_layer in layers {
         let path = input_layer.as_str().unwrap();
         let name = path.split(".geojson").collect::<Vec<&str>>()[0];
-        let layer_properties = if config_options_table.contains_key(name) {
-            // match config_options_table[name].get("representation") {
-            //     Some(&toml::Value::String(ref name)) => {
-            //         LayerProperties::from_config(&config_options[name].as_table().unwrap())
-            //     }
-            //     Some(&_) => panic!(""),
-            //     None => LayerProperties::from_config(&config_options[name].as_table().unwrap()),
-            // }
-            LayerProperties::from_config(&config_options[name].as_table().unwrap())
-        } else {
-            LayerProperties::default()
-        };
         let mut file = File::open(path).unwrap_or_else(|err| {
             println!("Unable to open layer at path: {}\nError: {}", path, err);
             std::process::exit(1)
@@ -428,7 +382,41 @@ fn main() {
             let output_proj = Proj::new(proj_name).unwrap();
             decoded_geojson = reproj(&mut decoded_geojson, &input_proj, &output_proj);
         };
-        let group = converter.convert(decoded_geojson, &layer_properties);
+        // let layer_properties = if config_options_table.contains_key(name) {
+        //     SingleColorLayerProperties::from_config(&config_options[name].as_table().unwrap())
+        // } else {
+        //     SingleColorLayerProperties::default()
+        // };
+        let group = if !config_options_table.contains_key(name) {
+            let layer_properties = SingleColorLayerProperties::default();
+            Renderer::render_unicolor(&converter, decoded_geojson, &layer_properties)
+
+        } else if !config_options_table[name]
+                       .as_table()
+                       .unwrap()
+                       .contains_key("representation") {
+            let layer_properties =
+                SingleColorLayerProperties::from_config(&config_options[name].as_table().unwrap());
+            Renderer::render_unicolor(&converter, decoded_geojson, &layer_properties)
+        } else {
+            match config_options_table[name].get("representation") {
+                Some(&toml::Value::String(ref type_name)) => {
+                    if type_name == "choropleth" {
+                        let layer_properties =
+                            ChoroplethLayerProperties::from_config(config_options_table[name]
+                                                                       [type_name]
+                                                                           .as_table()
+                                                                           .unwrap());
+                        Renderer::render_choropleth(&converter, decoded_geojson, &layer_properties)
+                    } else {
+                        panic!("Invalid representation name");
+                    }
+                }
+                Some(&_) => panic!(""),
+                None => panic!(""),
+            }
+        };
+        // let group = Renderer::render_unicolor(&converter, decoded_geojson, &layer_properties);
         document = document.add(group.set("id", name));
     }
 

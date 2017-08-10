@@ -45,5 +45,4 @@ position = [400, 50]
 mapsvg -i config.toml
 ```
 **Output:**  
-
-<img src="https://raw.githubusercontent.com/mthh/mapsvg-rs/master/examples/map.svg" width="20%">
+See SVG files in the [examples](https://github.com/mthh/mapsvg-rs/tree/master/examples) folder.

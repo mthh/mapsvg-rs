@@ -5,18 +5,28 @@ projection = "+init=epsg:3857"
 layers = ["world.geojson", "afr.geojson"]
 extent = [-10037508.342789244, 10037508.342789244, -10037508.342789244, 10037508.342789244]
 output = "map2.svg"
+background = "lightblue"
 
 [afr]
-fill = "green"
+representation = "choropleth"
 fill-opacity = "1"
 stroke = "black"
 stroke-width = "0.7"
-representation = "choropleth"
+
+[afr.choropleth]
+field = "POP2005"
+palette = "Oranges"
 
 [world]
 fill = "grey"
 fill-opacity = "0.7"
 stroke-width = "0.4"
 
-[afr.choropleth]
-field = "POP2005"
+[title]
+content = "Population 2005"
+font-size = "22"
+position = [400, 75]
+
+
+[source]
+content = "Projection: Web-Mercator (EPSG:3857)"
