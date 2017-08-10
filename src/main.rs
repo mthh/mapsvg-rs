@@ -165,14 +165,14 @@ impl Renderer {
                     let circle = converter.draw_point(&point);
                     group.append(circle
                                      .set("fill", prop.fill.clone())
-                                     .set("radius", prop.radius.clone()))
+                                     .set("r", prop.radius.clone()))
                 }
                 Value::MultiPoint(points) => {
                     for point in &points {
                         let circle = converter.draw_point(&point);
                         group.append(circle
                                          .set("fill", prop.fill.clone())
-                                         .set("radius", prop.radius.clone()))
+                                         .set("r", prop.radius.clone()))
                     }
                 }
                 Value::LineString(positions) => {
@@ -246,12 +246,12 @@ impl Renderer {
             match geom.value {
                 Value::Point(point) => {
                     let circle = converter.draw_point(&point);
-                    group.append(circle.set("fill", color).set("radius", prop.radius.clone()))
+                    group.append(circle.set("fill", color).set("r", prop.radius.clone()))
                 }
                 Value::MultiPoint(points) => {
                     for point in &points {
                         let circle = converter.draw_point(&point);
-                        group.append(circle.set("fill", color).set("radius", prop.radius.clone()))
+                        group.append(circle.set("fill", color).set("r", prop.radius.clone()))
                     }
                 }
                 Value::LineString(positions) => {
