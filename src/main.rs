@@ -22,7 +22,7 @@ macro_rules! expect_float {
     ($value:expr, $name:expr) => (
         match $value.as_float() {
             Some(v) => v,
-            None => panic!("Expected float value on value {}!", $name)
+            None => panic!("Expected float value on property \"{}\"!", $name)
         }
     )
 }
@@ -61,6 +61,10 @@ struct LayerProperties {
     stroke_opacity: String,
     stroke_width: String,
     radius: String,
+}
+
+fn get_nb_class(nb_features: f64) -> i32 {
+    (1.0 + 3.3 * nb_features.log(10.0)).floor() as i32
 }
 
 fn get_values(geojson: &GeoJson, field_name: &String) -> Vec<f64> {
@@ -350,10 +354,13 @@ fn main() {
                  .help("Input configuration file to use (.toml)."))
         .get_matches();
     let file_path = matches.value_of("input").unwrap();
-    // let width: u32 = matches.value_of("width").unwrap().parse::<u32>().unwrap();
-    // let height: u32 = matches.value_of("height").unwrap().parse::<u32>().unwrap();
 
-    let mut file = File::open(file_path).unwrap();
+    let mut file = File::open(file_path).unwrap_or_else(|err| {
+        println!("Unable to open configuration file: {}\nError: {}",
+                 file_path,
+                 err);
+        std::process::exit(1)
+    });
     let mut a = String::new();
     file.read_to_string(&mut a).unwrap();
     let config_options = a.parse::<toml::Value>().unwrap();
@@ -371,13 +378,17 @@ fn main() {
         .as_str()
         .unwrap();
     let converter = Converter::new(width, height, &map_extent);
+
+    // Create a new svg document:
     let mut document = Document::new()
         .set("x", "0")
         .set("y", "0")
         .set("width", format!("{}", converter.viewport_width))
         .set("height", format!("{}", converter.viewport_height));
+
     let config_options_table = config_options.as_table().unwrap();
-    let layers = config_options_table["map"]["layers"].as_array().unwrap();
+
+    // Add an underlying rect if the "background" key is provided:
     if let Some(&toml::Value::String(ref bg_color)) =
         config_options_table["map"].get("background") {
         let bg_rect = Rect::new()
@@ -386,6 +397,8 @@ fn main() {
             .set("height", "100%");
         document = document.add(bg_rect);
     };
+
+    let layers = config_options_table["map"]["layers"].as_array().unwrap();
 
     for input_layer in layers {
         let path = input_layer.as_str().unwrap();
@@ -402,7 +415,10 @@ fn main() {
         } else {
             LayerProperties::default()
         };
-        let mut file = File::open(path).unwrap();
+        let mut file = File::open(path).unwrap_or_else(|err| {
+            println!("Unable to open layer at path: {}\nError: {}", path, err);
+            std::process::exit(1)
+        });
         let mut raw_json = String::new();
         file.read_to_string(&mut raw_json).unwrap();
         let mut decoded_geojson = raw_json.parse::<GeoJson>().unwrap();
@@ -413,11 +429,73 @@ fn main() {
             decoded_geojson = reproj(&mut decoded_geojson, &input_proj, &output_proj);
         };
         let group = converter.convert(decoded_geojson, &layer_properties);
-        document = document.add(group);
+        document = document.add(group.set("id", name));
     }
-    if let Some(&toml::Value::Table(ref title_options)) = config_options_table.get("title") {
+
+    // Add the source section :
+    if let Some(&toml::Value::Table(ref source_options)) = config_options_table.get("source") {
+        if !source_options.contains_key("content") {
+            println!("\"Source\" section need to have a content!");
+            std::process::exit(1);
+        }
+        // Fetch the x, y and text-anchor values:
+        let position: (i32, i32, &'static str) = match source_options.get("position") {
+            Some(&toml::Value::Array(ref pos)) => {
+                (pos[0].as_integer().unwrap() as i32, pos[1].as_integer().unwrap() as i32, "middle")
+            }
+            Some(&toml::Value::String(ref horiz_pos)) => {
+                let v = if horiz_pos == "right" {
+                    (converter.viewport_width - converter.viewport_width / 25,
+                     converter.viewport_height - converter.viewport_height / 25,
+                     "end")
+                } else if horiz_pos == "center" {
+                    (converter.viewport_width / 2,
+                     converter.viewport_height - converter.viewport_height / 25,
+                     "middle")
+                } else {
+                    (converter.viewport_width / 25,
+                     converter.viewport_height - converter.viewport_height / 25,
+                     "start")
+                };
+                (v.0 as i32, v.1 as i32, v.2)
+            }
+            Some(&_) | None => {
+                ((converter.viewport_width - converter.viewport_width / 15) as i32,
+                 (converter.viewport_height - converter.viewport_height / 15) as i32,
+                 "end")
+            }
+        };
+        let font_size = if let Some(&toml::Value::String(ref val)) =
+            source_options.get("font-size") {
+            val
+        } else {
+            "14"
+        };
         let text = Text::new()
-            .set("font-size", title_options["font-size"].as_str().unwrap())
+            .set("id", "source")
+            .set("font-size", font_size)
+            .set("x", position.0)
+            .set("y", position.1)
+            .set("text-anchor", position.2)
+            .add(NodeText::new(source_options["content"].as_str().unwrap()));
+        document = document.add(text);
+    }
+
+    // Add the title :
+    if let Some(&toml::Value::Table(ref title_options)) = config_options_table.get("title") {
+        if !title_options.contains_key("content") || !title_options["content"].is_str() {
+            println!("\"Title\" section need to have a content!");
+            std::process::exit(1);
+        }
+        let font_size = if let Some(&toml::Value::String(ref val)) =
+            title_options.get("font-size") {
+            val
+        } else {
+            "22"
+        };
+        let text = Text::new()
+            .set("id", "title")
+            .set("font-size", font_size)
             .set("text-anchor", "middle")
             .set("x", title_options["position"][0].as_integer().unwrap())
             .set("y", title_options["position"][1].as_integer().unwrap())

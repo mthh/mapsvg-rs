@@ -2,15 +2,21 @@
 width = 500
 height = 500
 projection = "+init=epsg:3857"
-layers = ["afr.geojson"]
-extent = [-20037508.342789244, 20037508.342789244, -20037508.342789244, 20037508.342789244]
-output = "map.svg"
+layers = ["world.geojson", "afr.geojson"]
+extent = [-10037508.342789244, 10037508.342789244, -10037508.342789244, 10037508.342789244]
+output = "map2.svg"
 
 [afr]
 fill = "green"
-fill-opacity = "0.3"
-stroke-width = "0.4"
+fill-opacity = "1"
+stroke = "black"
+stroke-width = "0.7"
 representation = "choropleth"
+
+[world]
+fill = "grey"
+fill-opacity = "0.7"
+stroke-width = "0.4"
 
 [afr.choropleth]
 field = "POP2005"
