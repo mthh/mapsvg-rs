@@ -5,12 +5,7 @@ pub fn get_nb_class(nb_features: u32) -> i32 {
     (1.0 + 3.3 * (nb_features as f64).log(10.0)).floor() as i32
 }
 
-pub fn get_values(geojson: &GeoJson, field_name: &String) -> Vec<f64> {
-    let features = match geojson {
-        &GeoJson::FeatureCollection(ref collection) => &collection.features,
-        _ => panic!("Error: expected a Feature collection of polygons!"),
-    };
-
+pub fn get_values(features: &[Feature], field_name: &String) -> Vec<f64> {
     let mut res = Vec::new();
     for feature in features {
         if let Some(ref prop) = feature.properties {
@@ -21,6 +16,7 @@ pub fn get_values(geojson: &GeoJson, field_name: &String) -> Vec<f64> {
     }
     res
 }
+
 
 pub fn reproj(decoded_geojson: &mut GeoJson, input_proj: &Proj, output_proj: &Proj) -> GeoJson {
     let features = match decoded_geojson {

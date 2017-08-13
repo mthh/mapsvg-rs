@@ -9,5 +9,5 @@ geojson = "^0.8"
 clap = "^2.26"
 toml = "^0.4"
 proj = { git = "https://github.com/mthh/rust-proj", branch = "withoutgeo" }
-colorbrewer = { git = "https://github.com/mthh/colorbrewer-rs" }
+colorbrewer = "0.1.0"
 # geo ="0.4.2"

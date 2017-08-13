@@ -9,8 +9,10 @@ use std::collections::BTreeMap;
 use clap::{Arg, App};
 use geojson::{GeoJson, Value};
 use proj::Proj;
+use std::env::set_current_dir;
 use std::fs::File;
 use std::io::Read;
+use std::path::Path as StdPath;
 use svg::Document;
 use svg::Node;
 use svg::node::element::{Circle, Group, Path, Rectangle as Rect, Text};
@@ -23,7 +25,7 @@ mod layer;
 mod jenks;
 mod classification;
 
-use classification::Classif;
+use classification::{Classif, Classification};
 use layer::{reproj, get_nb_class, get_values};
 
 
@@ -35,6 +37,7 @@ struct MapExtent {
 }
 
 struct ChoroplethLayerProperties {
+    type_classification: String,
     field_name: String,
     palette_name: String,
     fill_opacity: String,
@@ -47,6 +50,7 @@ struct ChoroplethLayerProperties {
 impl ChoroplethLayerProperties {
     fn from_config(c: &BTreeMap<String, toml::value::Value>) -> Self {
         ChoroplethLayerProperties {
+            type_classification: string_or_default!(c.get("classification"), "quantiles"),
             field_name: string_or_default!(c.get("field"), "aaa"),
             palette_name: string_or_default!(c.get("palette"), "Greens"),
             fill_opacity: string_or_default!(c.get("fill-opacity"), "0.8"),
@@ -139,11 +143,11 @@ impl<'a> Converter<'a> {
     }
 }
 
-enum Representation {
-    Unicolor,
-    Random,
-    Choropleth,
-}
+// enum Representation {
+//     Unicolor,
+//     Random,
+//     Choropleth,
+// }
 
 struct Renderer {}
 
@@ -154,7 +158,10 @@ impl Renderer {
                        -> Group {
         let features = match decoded_geojson {
             GeoJson::FeatureCollection(collection) => collection.features,
-            _ => panic!("Error: expected a Feature collection!"),
+            _ => {
+                println!("Expected a GeoJSON feature collection!");
+                std::process::exit(1)
+            }
         };
 
         let mut group = Group::new();
@@ -230,14 +237,26 @@ impl Renderer {
                          decoded_geojson: GeoJson,
                          prop: &ChoroplethLayerProperties)
                          -> Group {
-        let values = get_values(&decoded_geojson, &prop.field_name);
         let features = match decoded_geojson {
             GeoJson::FeatureCollection(collection) => collection.features,
             _ => panic!("Error: expected a Feature collection!"),
         };
+        let values = get_values(&features, &prop.field_name);
         let nb_class = get_nb_class(values.len() as u32) as u32;
-        let classifier = Classif::new(nb_class, values);
-        let palette = colorbrewer::get_ramp(colorbrewer::Palette::Oranges, nb_class).unwrap();
+        let type_classif: Classification = prop.type_classification
+            .parse::<Classification>()
+            .unwrap_or_else(|_| {
+                                println!("Invalid classification name!");
+                                std::process::exit(1)
+                            });
+        let palette_name: colorbrewer::Palette = prop.palette_name
+            .parse()
+            .unwrap_or_else(|_| {
+                                println!("Unexisting palette name!");
+                                std::process::exit(1)
+                            });
+        let classifier = Classif::new(nb_class, values, type_classif);
+        let palette = colorbrewer::get_color_ramp(palette_name, nb_class).unwrap();
         let mut group = Group::new();
         for (ix, feature) in features.iter().enumerate() {
             let geom = feature.clone().geometry.unwrap();
@@ -312,18 +331,27 @@ fn main() {
         .version("0.1.0")
         .about("Convert geojson to svg")
         .arg(Arg::with_name("input")
-                 .short("i")
-                 .long("input")
+                 .index(1)
                  .required(true)
-                 .takes_value(true)
-                 .value_name("FILE")
+                 .value_name("CONFIG_FILE")
                  .help("Input configuration file to use (.toml)."))
         .get_matches();
-    let file_path = matches.value_of("input").unwrap();
-
-    let mut file = File::open(file_path).unwrap_or_else(|err| {
-        println!("Unable to open configuration file: {}\nError: {}",
-                 file_path,
+    let file_path = StdPath::new(matches.value_of("input").unwrap());
+    if !file_path.exists() || !file_path.is_file() {
+        println!("Invalid file path: \"{}\" doesn't exists!",
+                 file_path.to_str().unwrap());
+        std::process::exit(1)
+    }
+    match file_path.parent() {
+        Some(ref val) => {
+            set_current_dir(StdPath::new(val))
+                .unwrap_or_else(|_| println!("Unable to use the file path provided!"));
+        }
+        None => {}
+    };
+    let mut file = File::open(file_path.file_name().unwrap()).unwrap_or_else(|err| {
+        println!("Unable to open configuration file: \"{:?}\"\nError: {}",
+                 file_path.to_str().unwrap(),
                  err);
         std::process::exit(1)
     });
@@ -364,13 +392,14 @@ fn main() {
         document = document.add(bg_rect);
     };
 
+    // Fetch the list of layers to be renderer:
     let layers = config_options_table["map"]["layers"].as_array().unwrap();
 
     for input_layer in layers {
         let path = input_layer.as_str().unwrap();
         let name = path.split(".geojson").collect::<Vec<&str>>()[0];
         let mut file = File::open(path).unwrap_or_else(|err| {
-            println!("Unable to open layer at path: {}\nError: {}", path, err);
+            println!("Unable to open layer at path: \"{}\"\nError: {}", path, err);
             std::process::exit(1)
         });
         let mut raw_json = String::new();
