@@ -2,8 +2,9 @@ use jenks;
 use std::str::FromStr;
 
 pub enum Classification {
-    Jenks,
     EqualInterval,
+    HeadTail,
+    Jenks,
     Quantiles,
 }
 
@@ -17,6 +18,7 @@ impl FromStr for Classification {
             "equal interval" | "equal_interval" | "Equal Interval" | "EqualInverval" => {
                 Ok(Classification::EqualInterval)
             }
+            "HeadTail" => Ok(Classification::HeadTail),
             _ => Err("Invalid classification name"),
         }
     }
@@ -26,7 +28,9 @@ pub struct Classif {
     // type_classif: Classification,
     pub values: Vec<f64>,
     // nb_class: u32,
-    bounds: Vec<f64>,
+    pub bounds: Vec<f64>,
+    pub min: f64,
+    pub max: f64,
 }
 
 impl Classif {
@@ -36,13 +40,17 @@ impl Classif {
             Classification::Jenks => jenks::get_breaks(&mut v, nb_class),
             Classification::Quantiles => get_quantiles(&mut v, nb_class),
             Classification::EqualInterval => get_equal_interval(&mut v, nb_class),
-            _ => unimplemented!(),
+            Classification::HeadTail => get_head_tail_breaks(&mut v),
         };
+        let min = v.first().unwrap();
+        let max = v.last().unwrap();
         Classif {
-            // type_classif: Classification::Jenks,
+            // type_classif: type_classif,
             values: values,
             // nb_class: nb_class,
             bounds: breaks,
+            min: *min,
+            max: *max,
         }
     }
 
@@ -56,6 +64,7 @@ impl Classif {
     }
 }
 
+
 fn get_equal_interval(values: &mut [f64], nb_class: u32) -> Vec<f64> {
     values.sort_by(|a, b| a.partial_cmp(b).unwrap());
     // let nb_elem = values.len();
@@ -64,7 +73,7 @@ fn get_equal_interval(values: &mut [f64], nb_class: u32) -> Vec<f64> {
     let interval = (max - min) / nb_class as f64;
     let mut breaks = Vec::new();
     let mut val = *min;
-    for i in 0..(nb_class + 1) {
+    for _ in 0..(nb_class + 1) {
         breaks.push(val);
         val += interval;
     }
@@ -86,5 +95,31 @@ fn get_quantiles(values: &mut [f64], nb_class: u32) -> Vec<f64> {
         breaks.push(values[qidx - 1]);
     }
     breaks.push(values[nb_elem - 1]);
+    breaks
+}
+
+fn get_mean(values: &[f64]) -> f64 {
+    values.iter().sum::<f64>() / values.len() as f64
+}
+
+
+fn get_head_tail_breaks(values: &mut [f64]) -> Vec<f64> {
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let mut _mean = get_mean(&values);
+    let mut breaks = Vec::new();
+    let mut t;
+    breaks.push(values[0]);
+    loop {
+        t = values
+            .iter()
+            .filter(|&v| *v > _mean)
+            .cloned()
+            .collect::<Vec<f64>>();
+        _mean = get_mean(&t);
+        breaks.push(_mean);
+        if t.len() < 2 {
+            break;
+        }
+    }
     breaks
 }
