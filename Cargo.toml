@@ -10,4 +10,5 @@ clap = "^2.26"
 toml = "^0.4"
 proj = { git = "https://github.com/mthh/rust-proj", branch = "withoutgeo" }
 colorbrewer = "0.1.0"
+classif = "0.0.2"
 # geo ="0.4.2"

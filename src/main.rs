@@ -4,9 +4,11 @@ extern crate clap;
 extern crate toml;
 extern crate proj;
 extern crate colorbrewer;
+extern crate classif;
 
 use std::collections::BTreeMap;
 use clap::{Arg, App};
+use classif::{BoundsInfo, Classification};
 use geojson::{GeoJson, Value};
 use proj::Proj;
 use std::env::set_current_dir;
@@ -22,10 +24,7 @@ use svg::node::element::path::Data;
 #[macro_use]
 mod macros;
 mod layer;
-mod jenks;
-mod classification;
 
-use classification::{Classif, Classification};
 use layer::{reproj, get_nb_class, get_values};
 
 
@@ -50,7 +49,7 @@ struct ChoroplethLayerProperties {
 impl ChoroplethLayerProperties {
     fn from_config(c: &BTreeMap<String, toml::value::Value>) -> Self {
         ChoroplethLayerProperties {
-            type_classification: string_or_default!(c.get("classification"), "quantiles"),
+            type_classification: string_or_default!(c.get("classification"), "Quantiles"),
             field_name: string_or_default!(c.get("field"), "aaa"),
             palette_name: string_or_default!(c.get("palette"), "Greens"),
             fill_opacity: string_or_default!(c.get("fill-opacity"), "0.8"),
@@ -255,12 +254,12 @@ impl Renderer {
                                 println!("Unexisting palette name!");
                                 std::process::exit(1)
                             });
-        let classifier = Classif::new(nb_class, values, type_classif);
+        let classifier = BoundsInfo::new(nb_class, &values, type_classif).unwrap();
         let palette = colorbrewer::get_color_ramp(palette_name, nb_class).unwrap();
         let mut group = Group::new();
         for (ix, feature) in features.iter().enumerate() {
             let geom = feature.clone().geometry.unwrap();
-            let value = classifier.values[ix];
+            let value = values[ix];
             let color = palette[classifier.get_class_index(value).unwrap() as usize];
             match geom.value {
                 Value::Point(point) => {
