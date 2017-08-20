@@ -1,9 +1,25 @@
 # mapsvg-rs
 ## WIP / No real purpose
 
-Draw a bunch of svg path from a set of GeoJSON Feature Collection and a configuration file!
-
+Toy project about learning rust and also drawing a bunch of svg path from a set of GeoJSON Feature Collection and a configuration file!
 For those who love TOML files and SVG ?!
+
+A few dependent crates/repositories where created for this purpose:
+- colorbrewer: [GitHub](https://github.com/mthh/colorbrewer-rs) / [crates.io](https://crates.io/crates/colorbrewer)
+- classif: [GitHub](https://github.com/mthh/classif) / [crates.io](https://crates.io/crates/classif)
+- nightcoords: [GitHub](https://github.com/mthh/nightcoords)
+
+### Features:
+
+- [x] Draw path for points, lines and polygons
+- [x] User defined projection
+- [x] Single color or "choropleth" coloration
+- [x] Night shade (but why?)
+- [x] Graticule
+- [ ] Osm tiles background
+- [ ] Other "mapping" methods (proportional symbols, ... ?)
+- [ ] Cool svg filters ?
+
 
 ### Example of TOML configuration file and output:
 **config.toml**
@@ -42,7 +58,7 @@ position = [400, 50]
 
 **SVG generation:**
 ```shell
-mapsvg -i config.toml
+mapsvg config.toml
 ```
 **Output:**  
 See SVG files in the [examples](https://github.com/mthh/mapsvg-rs/tree/master/examples) folder.

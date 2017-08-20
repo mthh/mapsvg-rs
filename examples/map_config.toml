@@ -1,12 +1,12 @@
 [map]
 width = 500
 height = 800
-projection = "+init=epsg:3857" # This is the projection to use to draw the map
-extent = [-8214782.6791878305, -6086576.6304815235, -7384967.8868029471, -2408963.7082710671]
-# extent = [-20037508.342789244, 20037508.342789244, -20037508.342789244, 20037508.342789244]
+projection = "+init=epsg:3069" # This is the projection to use to draw the map
 layers = ["Argentine.geojson", "lines.geojson", "points.geojson"]
 output = "map.svg"
 background = "rgba(45, 45, 244, 0.5)"
+extent = "Argentine"
+# extent = [-8214782.6791878305, -6086576.6304815235, -7384967.8868029471, -2408963.7082710671]
 
 [Argentine]
 fill = "red"
@@ -34,3 +34,6 @@ position = [400, 50]
 content = "Source: xyz"
 font-size = "20"
 position = "right"
+
+[graticule]
+color = "grey"

@@ -22,11 +22,13 @@ fill = "grey"
 fill-opacity = "0.7"
 stroke-width = "0.4"
 
+[graticule]
+stroke = "grey"
+
 [title]
 content = "Population 2005"
 font-size = "22"
 position = [400, 75]
-
 
 [source]
 content = "Projection: Web-Mercator (EPSG:3857)"
